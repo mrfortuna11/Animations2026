@@ -1,1 +1,1 @@
-![Vizualization](pictures/sem1.png)
+![Homework 1](pictures/hw1.jpg)
