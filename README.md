@@ -1,0 +1,1 @@
+![Vizualization](pictures/sem1.png)
