@@ -28,6 +28,12 @@ else()
     endif()
 endif()
 
+if(MSVC)
+    add_compile_options(/EHsc)
+    #string(REPLACE "/WX" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+    #string(REPLACE "/W4" "/W3" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")   
+endif()
+
 
 if(WIN32)
     set(ADDITIONAL_LIBS winmm.lib Version.lib Setupapi.lib)
@@ -35,18 +41,18 @@ if(WIN32)
 
     add_library(SDL2 STATIC IMPORTED)
     set_target_properties(SDL2 PROPERTIES
-        IMPORTED_LOCATION_RELEASE "${CMAKE_BINARY_DIR}/SDL2.lib"
-        IMPORTED_LOCATION_RELWITHDEBINFO "${CMAKE_BINARY_DIR}/SDL2.lib"
-        IMPORTED_LOCATION_DEBUG "${CMAKE_BINARY_DIR}/SDL2.lib"
+        IMPORTED_LOCATION_RELEASE "${CMAKE_BINARY_DIR}/../SDL2.lib"
+        IMPORTED_LOCATION_RELWITHDEBINFO "${CMAKE_BINARY_DIR}/../SDL2.lib"
+        IMPORTED_LOCATION_DEBUG "${CMAKE_BINARY_DIR}/../SDL2.lib"
         LINKER_LANGUAGE CXX)
 
     set(ADDITIONAL_LIBS ${ADDITIONAL_LIBS} assimp)
 
     add_library(assimp STATIC IMPORTED)
     set_target_properties(assimp PROPERTIES
-        IMPORTED_LOCATION_DEBUG "${CMAKE_BINARY_DIR}/assimp.lib"
-        IMPORTED_LOCATION_RELWITHDEBINFO "${CMAKE_BINARY_DIR}/assimp.lib"
-        IMPORTED_LOCATION_RELEASE "${CMAKE_BINARY_DIR}/assimp.lib"
+        IMPORTED_LOCATION_DEBUG "${CMAKE_BINARY_DIR}/../assimp.lib"
+        IMPORTED_LOCATION_RELWITHDEBINFO "${CMAKE_BINARY_DIR}/../assimp.lib"
+        IMPORTED_LOCATION_RELEASE "${CMAKE_BINARY_DIR}/../assimp.lib"
         LINKER_LANGUAGE CXX)
 else()
     set(ADDITIONAL_LIBS -ldl)
@@ -68,6 +74,22 @@ set(TMP_SOURCES )
 add_folder(application)
 add_folder(engine)
 add_folder(3rd_party/imgui)
+
+SET(ozz_build_tools OFF CACHE BOOL "" FORCE)
+SET(ozz_build_fbx OFF CACHE BOOL "" FORCE)
+SET(ozz_build_gltf OFF CACHE BOOL "" FORCE)
+SET(ozz_build_samples OFF CACHE BOOL "" FORCE)
+SET(ozz_build_howtos OFF CACHE BOOL "" FORCE)
+SET(ozz_build_tests OFF CACHE BOOL "" FORCE)
+
+SET(ozz_build_postfix OFF CACHE BOOL "" FORCE)
+add_subdirectory(3rd_party/ozz)
+include_directories(3rd_party/ozz/include)
+
+set(ADDITIONAL_LIBS ${ADDITIONAL_LIBS}
+ozz_geometry
+ozz_animation_offline
+ozz_options)
 
 set(EXE_SOURCES ${EXE_SOURCES} ${SRC_ROOT}/3rd_party/glad/glad.c)
 

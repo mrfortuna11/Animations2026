@@ -17,32 +17,32 @@ static void show_info()
   ImGui::End();
 }
 
-static glm::vec2 world_to_screen(const UserCamera &camera, glm::vec3 world_position)
+static glm::vec2 world_to_screen(const UserCamera& camera, glm::vec3 world_position)
 {
   glm::vec4 clipSpace = camera.projection * inverse(camera.transform) * glm::vec4(world_position, 1.f);
   glm::vec3 ndc = glm::vec3(clipSpace) / clipSpace.w;
   glm::vec2 screen = (glm::vec2(ndc) + 1.f) / 2.f;
-  ImGuiIO &io = ImGui::GetIO();
+  ImGuiIO& io = ImGui::GetIO();
   return glm::vec2(screen.x * io.DisplaySize.x, io.DisplaySize.y - screen.y * io.DisplaySize.y);
 }
 
-static void manipulate_transform(glm::mat4 &transform, const UserCamera &camera)
+static void manipulate_transform(glm::mat4& transform, const UserCamera& camera)
 {
   ImGuizmo::BeginFrame();
-  const glm::mat4 &projection = camera.projection;
+  const glm::mat4& projection = camera.projection;
   mat4 cameraView = inverse(camera.transform);
-  ImGuiIO &io = ImGui::GetIO();
+  ImGuiIO& io = ImGui::GetIO();
   ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
 
   glm::mat4 globNodeTm = transform;
 
   ImGuizmo::Manipulate(glm::value_ptr(cameraView), glm::value_ptr(projection), mCurrentGizmoOperation, mCurrentGizmoMode,
-                       glm::value_ptr(globNodeTm));
+    glm::value_ptr(globNodeTm));
 
   transform = globNodeTm;
 }
 
-static void show_characters(Scene &scene)
+static void show_characters(Scene& scene)
 {
   // implement showing characters when only one character can be selected
   static uint32_t selectedCharacter = -1u;
@@ -51,7 +51,7 @@ static void show_characters(Scene &scene)
   {
     for (size_t i = 0; i < scene.characters.size(); i++)
     {
-      Character &character = scene.characters[i];
+      Character& character = scene.characters[i];
       ImGui::PushID(i);
       if (ImGui::Selectable(character.name.c_str(), selectedCharacter == i, ImGuiSelectableFlags_AllowDoubleClick))
       {
@@ -66,14 +66,57 @@ static void show_characters(Scene &scene)
         const float INDENT = 15.0f;
         ImGui::Indent(INDENT);
         ImGui::Text("Meshes: %zu", character.meshes.size());
+
+        // Add animation selector dropdown
+        if (!character.availableAnimations.empty())
+        {
+          ImGui::Text("Animation:");
+          ImGui::SameLine();
+
+          // Create a dropdown with animation names
+          if (ImGui::BeginCombo("##animation_selector",
+            character.availableAnimations[character.currentAnimationIndex].name.c_str()))
+          {
+            for (int animIdx = 0; animIdx < character.availableAnimations.size(); animIdx++)
+            {
+              bool isSelected = (character.currentAnimationIndex == animIdx);
+              if (ImGui::Selectable(character.availableAnimations[animIdx].name.c_str(), isSelected))
+              {
+                // Change animation when selected
+                character.currentAnimationIndex = animIdx;
+                character.animationContext.currentAnimation = character.availableAnimations[animIdx].animation;
+
+                // Reset animation progress when switching animations
+                character.animationContext.currentProgress = 0.0f;
+              }
+
+              if (isSelected)
+                ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+          }
+
+          float progress = character.animationContext.currentProgress;
+          float duration = character.animationContext.currentAnimation
+            ? character.animationContext.currentAnimation->duration()
+            : 1.0f;
+
+          ImGui::Text("Progress: %.2f / %.2f seconds",
+            progress * duration,
+            duration);
+
+
+          ImGui::ProgressBar(progress, ImVec2(-1, 0), "");
+        }
+
         // show skeleton
-        SkeletonRuntime &skeleton = character.skeleton;
-        ImGui::Text("Skeleton Nodes: %zu", skeleton.names.size());
-        for (size_t j = 0; j < skeleton.names.size(); j++)
+        SkeletonData& skeletonData = character.skeletonData;
+        ImGui::Text("Skeleton Nodes: %zu", skeletonData.names.size());
+        for (size_t j = 0; j < skeletonData.names.size(); j++)
         {
           // show text with tabs for hierarchy
-          const std::string &name = skeleton.names[j];
-          int depth = skeleton.hierarchyDepth[j];
+          const std::string& name = skeletonData.names[j];
+          int depth = skeletonData.hierarchyDepth[j];
           std::string tabs(depth, ' ');
           std::string label = tabs + name;
           if (ImGui::Selectable(label.c_str(), selectedNode == j))
@@ -87,12 +130,13 @@ static void show_characters(Scene &scene)
     }
     if (selectedCharacter < scene.characters.size())
     {
-      Character &character = scene.characters[selectedCharacter];
-      if (selectedNode < character.skeleton.names.size())
+      Character& character = scene.characters[selectedCharacter];
+      if (selectedNode < character.skeletonData.names.size())
       {
-        glm::mat4 transform = character.transform * character.skeleton.worldTransform[selectedNode];
+        glm::mat4& worldTransform = reinterpret_cast<glm::mat4&>(character.animationContext.worldTransforms[selectedNode]);
+        glm::mat4 transform = character.transform * worldTransform;
         manipulate_transform(transform, scene.userCamera);
-        character.skeleton.worldTransform[selectedNode] = inverse(character.transform) * transform;
+        worldTransform = inverse(character.transform) * transform;
       }
       else
       {
@@ -101,19 +145,11 @@ static void show_characters(Scene &scene)
     }
   }
   ImGui::End();
+
   if (selectedCharacter < scene.characters.size())
   {
-    Character &character = scene.characters[selectedCharacter];
-    if (selectedNode < character.skeleton.names.size())
-    {
-      glm::mat4 transform = character.transform * character.skeleton.worldTransform[selectedNode];
-      // manipulate_transform(transform, scene.userCamera);
-      character.skeleton.worldTransform[selectedNode] = inverse(character.transform) * transform;
-    }
-    else
-    {
-      // manipulate_transform(character.transform, scene.userCamera);
-    }
+    Character& character = scene.characters[selectedCharacter];
+
     {
       const ImU32 flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoBringToFrontOnFocus;
 
@@ -135,89 +171,89 @@ static void show_characters(Scene &scene)
       const auto xAxisColor = IM_COL32(255, 0, 0, 200);    // Red for X axis
       const auto yAxisColor = IM_COL32(0, 255, 0, 200);    // Green for Y axis
       const auto zAxisColor = IM_COL32(0, 120, 255, 200);  // Blue for Z axis
-      
+
       // Draw bones with directional indicators
-      for (size_t j = 0; j < character.skeleton.names.size(); j++)
+      for (size_t j = 0; j < character.skeletonData.names.size(); j++)
       {
-        const glm::mat4 &transform = character.transform * character.skeleton.worldTransform[j];
-        int parent = character.skeleton.parents[j];
+        const glm::mat4& transform = reinterpret_cast<const glm::mat4&>(character.animationContext.worldTransforms[j]);
+        int parent = character.skeletonData.parents[j];
         if (parent >= 0) // from parent to child
         {
-          const glm::mat4 &parentTransform = character.transform * character.skeleton.worldTransform[parent];
-          
+          const glm::mat4& parentTransform = reinterpret_cast<const glm::mat4&>(character.animationContext.worldTransforms[parent]);
+
           const glm::vec3 jointPos = glm::vec3(transform[3]);
           const glm::vec3 parentJointPos = glm::vec3(parentTransform[3]);
-          
+
           const glm::vec3 boneDirection = jointPos - parentJointPos;
           const float boneLength = glm::length(boneDirection);
-          
+
           const glm::vec2 jointScreen = world_to_screen(scene.userCamera, jointPos);
           const glm::vec2 parentScreen = world_to_screen(scene.userCamera, parentJointPos);
-          
+
           const glm::vec3 midpoint = (jointPos + parentJointPos) * 0.5f;
           const glm::vec2 midpointScreen = world_to_screen(scene.userCamera, midpoint);
-          
+
+          // Draw bone line
           drawList->AddLine(
-              ImVec2(parentScreen.x, parentScreen.y), 
-              ImVec2(jointScreen.x, jointScreen.y), 
-              boneColor, 
-              2.5f
+            ImVec2(parentScreen.x, parentScreen.y),
+            ImVec2(jointScreen.x, jointScreen.y),
+            boneColor,
+            2.5f
           );
-          
-          const float axisScale = boneLength * 0.15f; 
-          
+
+          const float axisScale = boneLength * 0.15f;
+
           glm::vec3 xAxis = glm::normalize(glm::vec3(transform[0])) * axisScale;
           glm::vec3 yAxis = glm::normalize(glm::vec3(transform[1])) * axisScale;
           glm::vec3 zAxis = glm::normalize(glm::vec3(transform[2])) * axisScale;
-          
+
           glm::vec2 xAxisScreen = world_to_screen(scene.userCamera, jointPos + xAxis);
           glm::vec2 yAxisScreen = world_to_screen(scene.userCamera, jointPos + yAxis);
           glm::vec2 zAxisScreen = world_to_screen(scene.userCamera, jointPos + zAxis);
-          
-		  // Draw joint and axis
+
+          // Draw joint and axis
           drawList->AddCircleFilled(
-              ImVec2(jointScreen.x, jointScreen.y), 
-              4.0f, 
-              boneColor
+            ImVec2(jointScreen.x, jointScreen.y),
+            4.0f,
+            boneColor
           );
-          
+
+          // Draw the coordinate axes
           drawList->AddLine(
-              ImVec2(jointScreen.x, jointScreen.y), 
-              ImVec2(xAxisScreen.x, xAxisScreen.y), 
-              xAxisColor, 
-              1.5f
+            ImVec2(jointScreen.x, jointScreen.y),
+            ImVec2(xAxisScreen.x, xAxisScreen.y),
+            xAxisColor,
+            1.5f
           );
-          
+
           drawList->AddLine(
-              ImVec2(jointScreen.x, jointScreen.y), 
-              ImVec2(yAxisScreen.x, yAxisScreen.y), 
-              yAxisColor, 
-              1.5f
+            ImVec2(jointScreen.x, jointScreen.y),
+            ImVec2(yAxisScreen.x, yAxisScreen.y),
+            yAxisColor,
+            1.5f
           );
-          
+
           drawList->AddLine(
-              ImVec2(jointScreen.x, jointScreen.y), 
-              ImVec2(zAxisScreen.x, zAxisScreen.y), 
-              zAxisColor, 
-              1.5f
+            ImVec2(jointScreen.x, jointScreen.y),
+            ImVec2(zAxisScreen.x, zAxisScreen.y),
+            zAxisColor,
+            1.5f
           );
-          
+
+          // Draw directional arrow on the bone
           const float arrowSize = 4.0f;
           const glm::vec2 boneDir = glm::normalize(jointScreen - parentScreen);
           const glm::vec2 perpDir(-boneDir.y, boneDir.x);
-          
+
           const glm::vec2 arrowBase = jointScreen - boneDir * arrowSize * 2.0f;
           const glm::vec2 arrowLeft = arrowBase - boneDir * arrowSize + perpDir * arrowSize;
           const glm::vec2 arrowRight = arrowBase - boneDir * arrowSize - perpDir * arrowSize;
-          
+
           drawList->AddTriangleFilled(
-              ImVec2(jointScreen.x, jointScreen.y),
-              ImVec2(arrowLeft.x, arrowLeft.y),
-              ImVec2(arrowRight.x, arrowRight.y),
-              IM_COL32(80, 200, 120, 230) // Emerald Green
-              //IM_COL32(34, 139, 34, 230) //Forest Green
-              //IM_COL32(152, 255, 152, 230) //Mint Green
-              //IM_COL32(0, 128, 128, 230) //Teal Green
+            ImVec2(jointScreen.x, jointScreen.y),
+            ImVec2(arrowLeft.x, arrowLeft.y),
+            ImVec2(arrowRight.x, arrowRight.y),
+            IM_COL32(80, 200, 120, 230) // Emerald Green
           );
         }
         else
@@ -225,56 +261,57 @@ static void show_characters(Scene &scene)
           // Root node visualization
           const glm::vec3 rootPos = glm::vec3(transform[3]);
           const glm::vec2 rootScreen = world_to_screen(scene.userCamera, rootPos);
-          
+
           drawList->AddCircleFilled(
-              ImVec2(rootScreen.x, rootScreen.y), 
-              6.0f, 
-              IM_COL32(255, 255, 0, 200) //yellow for root
+            ImVec2(rootScreen.x, rootScreen.y),
+            6.0f,
+            IM_COL32(255, 255, 0, 200) //yellow for root
           );
-          
-		  // Draw root axis
+
+          // Draw root axis
           const float rootAxisScale = 0.1f;
           glm::vec3 xAxis = glm::normalize(glm::vec3(transform[0])) * rootAxisScale;
           glm::vec3 yAxis = glm::normalize(glm::vec3(transform[1])) * rootAxisScale;
           glm::vec3 zAxis = glm::normalize(glm::vec3(transform[2])) * rootAxisScale;
-          
+
           glm::vec2 xAxisScreen = world_to_screen(scene.userCamera, rootPos + xAxis);
           glm::vec2 yAxisScreen = world_to_screen(scene.userCamera, rootPos + yAxis);
           glm::vec2 zAxisScreen = world_to_screen(scene.userCamera, rootPos + zAxis);
-          
+
           drawList->AddLine(
-              ImVec2(rootScreen.x, rootScreen.y), 
-              ImVec2(xAxisScreen.x, xAxisScreen.y), 
-              xAxisColor, 
-              2.0f
+            ImVec2(rootScreen.x, rootScreen.y),
+            ImVec2(xAxisScreen.x, xAxisScreen.y),
+            xAxisColor,
+            2.0f
           );
- 
+
           drawList->AddLine(
-              ImVec2(rootScreen.x, rootScreen.y), 
-              ImVec2(yAxisScreen.x, yAxisScreen.y), 
-              yAxisColor, 
-              2.0f
+            ImVec2(rootScreen.x, rootScreen.y),
+            ImVec2(yAxisScreen.x, yAxisScreen.y),
+            yAxisColor,
+            2.0f
           );
-          
+
           drawList->AddLine(
-              ImVec2(rootScreen.x, rootScreen.y), 
-              ImVec2(zAxisScreen.x, zAxisScreen.y), 
-              zAxisColor, 
-              2.0f
+            ImVec2(rootScreen.x, rootScreen.y),
+            ImVec2(zAxisScreen.x, zAxisScreen.y),
+            zAxisColor,
+            2.0f
           );
         }
-		// Draw selected node indicator
+
+        // Draw selected node indicator
         if (j == selectedNode)
         {
           const glm::vec3 selectedPos = glm::vec3(transform[3]);
           const glm::vec2 selectedScreen = world_to_screen(scene.userCamera, selectedPos);
-          
+
           drawList->AddCircle(
-              ImVec2(selectedScreen.x, selectedScreen.y), 
-              8.0f, 
-              IM_COL32(255, 255, 255, 255), 
-              12, 
-              2.0f
+            ImVec2(selectedScreen.x, selectedScreen.y),
+            8.0f,
+            IM_COL32(255, 255, 255, 255),
+            12,
+            2.0f
           );
         }
       }
@@ -285,7 +322,7 @@ static void show_characters(Scene &scene)
   }
 }
 
-void render_imguizmo(ImGuizmo::OPERATION &mCurrentGizmoOperation, ImGuizmo::MODE &mCurrentGizmoMode)
+void render_imguizmo(ImGuizmo::OPERATION& mCurrentGizmoOperation, ImGuizmo::MODE& mCurrentGizmoMode)
 {
   if (ImGui::Begin("gizmo window"))
   {
@@ -316,14 +353,15 @@ void render_imguizmo(ImGuizmo::OPERATION &mCurrentGizmoOperation, ImGuizmo::MODE
   ImGui::End();
 }
 
-static void show_models(Scene &scene)
+static void show_models(Scene& scene)
 {
   if (ImGui::Begin("Models"))
   {
     static uint32_t selectedModel = -1u;
     for (size_t i = 0; i < scene.models.size(); i++)
     {
-      const ModelAsset &model = scene.models[i];
+      ImGui::PushID(i);
+      const ModelAsset& model = scene.models[i];
       if (ImGui::Selectable(model.path.c_str(), selectedModel == i))
       {
         selectedModel = i;
@@ -333,30 +371,45 @@ static void show_models(Scene &scene)
         ImGui::Indent(15.0f);
         ImGui::Text("Path: %s", model.path.c_str());
         ImGui::Text("Meshes: %zu", model.meshes.size());
+
         for (size_t j = 0; j < model.meshes.size(); j++)
         {
-          const MeshPtr &mesh = model.meshes[j];
+          ImGui::PushID(j);
+          const MeshPtr& mesh = model.meshes[j];
           ImGui::Text("%s", mesh->name.c_str());
+          ImGui::Text("Bones: %zu", mesh->bonesNames.size());
+          if (ImGui::TreeNode("", "Bones: %zu", mesh->bonesNames.size()))
+          {
+            int boneIndex = 0;
+            for (const std::string& boneName : mesh->bonesNames)
+            {
+              ImGui::Text("%d) %s", boneIndex, boneName.c_str());
+              boneIndex++;
+            }
+            ImGui::TreePop();
+          }
+          ImGui::PopID();
         }
         // show skeleton
-        const SkeletonOffline &skeleton = model.skeleton;
+        const SkeletonOffline& skeleton = model.skeleton;
         ImGui::Text("Skeleton Nodes: %zu", skeleton.names.size());
         for (size_t j = 0; j < skeleton.names.size(); j++)
         {
           // show text with tabs for hierarchy
-          const std::string &name = skeleton.names[j];
+          const std::string& name = skeleton.names[j];
           int depth = skeleton.hierarchyDepth[j];
           std::string tabs(depth, ' ');
           ImGui::Text("%s%s", tabs.c_str(), name.c_str());
         }
         ImGui::Unindent(15.0f);
       }
+      ImGui::PopID();
     }
   }
   ImGui::End();
 }
 
-void application_imgui_render(Scene &scene)
+void application_imgui_render(Scene& scene)
 {
   render_imguizmo(mCurrentGizmoOperation, mCurrentGizmoMode);
 
