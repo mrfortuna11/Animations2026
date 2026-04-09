@@ -1,1 +1,1 @@
-![Homework 1](pictures/hw1.jpg)
+![Homework 2](pictures/hw2.gif)
